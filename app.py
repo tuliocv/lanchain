@@ -8,9 +8,6 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_experimental.tools.python.tool import PythonAstREPLTool
-from langchain.agents import create_openai_tools_agent, AgentExecutor
-from langchain.tools import Tool
 
 # ======================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -20,42 +17,42 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📊 Análise de Dados com IA (LangChain + Streamlit)")
+st.title("📊 Análise de Dados com IA (Streamlit + LangChain)")
 
 # ======================================================
 # SIDEBAR — API KEY
 # ======================================================
 with st.sidebar:
-    st.header("🔑 Configuração")
-    openai_api_key = st.text_input(
+    st.header("🔑 OpenAI")
+    api_key = st.text_input(
         "Informe sua OpenAI API Key",
         type="password",
-        help="A chave é usada apenas nesta sessão e não é armazenada."
+        help="A chave é usada apenas durante a sessão."
     )
 
-if not openai_api_key:
-    st.warning("🔐 Insira sua OpenAI API Key para continuar.")
+if not api_key:
+    st.warning("Insira sua OpenAI API Key para continuar.")
     st.stop()
 
-os.environ["OPENAI_API_KEY"] = openai_api_key
+os.environ["OPENAI_API_KEY"] = api_key
 
 # ======================================================
 # UPLOAD DO ARQUIVO
 # ======================================================
-st.subheader("📂 Upload do arquivo Excel")
+st.subheader("📂 Upload do Excel")
 
 arquivo = st.file_uploader(
-    "Envie um arquivo .xlsx ou .xls",
+    "Envie um arquivo Excel (.xlsx ou .xls)",
     type=["xlsx", "xls"]
 )
 
 if not arquivo:
-    st.info("⬆️ Envie um arquivo Excel para iniciar a análise.")
+    st.info("Envie um arquivo para iniciar.")
     st.stop()
 
 df = pd.read_excel(arquivo)
 
-st.success("✅ Arquivo carregado com sucesso!")
+st.success("Arquivo carregado com sucesso!")
 st.dataframe(df.head())
 
 # ======================================================
@@ -67,65 +64,34 @@ llm = ChatOpenAI(
 )
 
 # ======================================================
-# FERRAMENTA PYTHON (EXECUÇÃO SOBRE O DF)
+# PROMPT — GERADOR DE CÓDIGO PYTHON
 # ======================================================
-python_tool = PythonAstREPLTool(
-    locals={
-        "df": df,
-        "pd": pd,
-        "np": np,
-        "plt": plt,
-        "sns": sns
-    }
-)
-
-tool_python = Tool(
-    name="Python",
-    func=python_tool.run,
-    description="""
-    Use esta ferramenta para executar código Python sobre o dataframe `df`.
-    Utilize pandas, numpy, matplotlib e seaborn.
-    Gere gráficos quando solicitado.
-    """
-)
-
-# ======================================================
-# PROMPT DO AGENTE
-# ======================================================
-prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
+prompt = ChatPromptTemplate.from_template("""
 Você é um analista de dados especialista.
+
 Você tem acesso a um DataFrame pandas chamado `df`.
 
-Regras:
-- Use Python sempre que precisar calcular, filtrar ou criar gráficos.
-- Para gráficos, use matplotlib ou seaborn.
-- Não crie dados fictícios.
-- Sempre responda em português.
-- Seja claro e objetivo.
-            """
-        ),
-        ("human", "{input}")
-    ]
-)
+Colunas disponíveis:
+{colunas}
 
-# ======================================================
-# AGENTE
-# ======================================================
-agent = create_openai_tools_agent(
-    llm=llm,
-    tools=[tool_python],
-    prompt=prompt
-)
+Amostra dos dados:
+{amostra}
 
-agent_executor = AgentExecutor(
-    agent=agent,
-    tools=[tool_python],
-    verbose=True
-)
+Pergunta do usuário:
+{pergunta}
+
+Regras obrigatórias:
+- Gere APENAS código Python válido
+- Use pandas, numpy, matplotlib ou seaborn
+- NÃO faça importações
+- NÃO use markdown
+- Se gerar gráfico, use matplotlib ou seaborn
+- O DataFrame já existe como `df`
+
+Código Python:
+""")
+
+cadeia = prompt | llm | StrOutputParser()
 
 # ======================================================
 # PERGUNTA DO USUÁRIO
@@ -133,8 +99,8 @@ agent_executor = AgentExecutor(
 st.subheader("❓ Pergunta")
 
 pergunta = st.text_area(
-    "Faça uma pergunta sobre os dados:",
-    placeholder="Ex: Qual é a média da coluna X? Gere um gráfico de Y por Z."
+    "Pergunte algo sobre os dados:",
+    placeholder="Ex: Gere um gráfico da média de vendas por categoria"
 )
 
 if st.button("🚀 Executar análise"):
@@ -143,22 +109,44 @@ if st.button("🚀 Executar análise"):
         st.warning("Digite uma pergunta.")
         st.stop()
 
-    with st.spinner("🤖 Analisando os dados..."):
-        try:
-            resposta = agent_executor.invoke(
-                {"input": pergunta}
-            )
+    with st.spinner("🤖 Analisando..."):
 
-            st.subheader("📌 Resposta")
-            st.write(resposta["output"])
+        colunas = "\n".join([f"- {c} ({t})" for c, t in df.dtypes.items()])
+        amostra = df.head(5).to_dict(orient="records")
+
+        codigo = cadeia.invoke({
+            "colunas": colunas,
+            "amostra": amostra,
+            "pergunta": pergunta
+        })
+
+        # Limpeza de segurança
+        codigo = codigo.replace("```python", "").replace("```", "").strip()
+
+        st.subheader("🧠 Código gerado pela IA")
+        st.code(codigo, language="python")
+
+        # Execução controlada
+        exec_context = {
+            "df": df,
+            "pd": pd,
+            "np": np,
+            "plt": plt,
+            "sns": sns
+        }
+
+        try:
+            exec(codigo, exec_context)
 
             # Exibir gráfico se existir
             fig = plt.gcf()
             if fig.get_axes():
-                st.subheader("📈 Gráfico gerado")
+                st.subheader("📈 Gráfico")
                 st.pyplot(fig)
                 plt.clf()
 
+            st.success("Análise concluída com sucesso!")
+
         except Exception as e:
-            st.error("❌ Ocorreu um erro durante a análise.")
+            st.error("Erro ao executar o código gerado.")
             st.exception(e)
