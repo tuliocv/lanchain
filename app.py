@@ -4,40 +4,22 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor
-from langchain.agents.openai_tools import create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
+from langchain_core.output_parsers import StrOutputParser
 
 # ======================================================
-# CONFIGURAÇÃO STREAMLIT
+# STREAMLIT
 # ======================================================
-st.set_page_config(
-    page_title="Análise de Dados com IA",
-    layout="wide"
-)
-
+st.set_page_config(page_title="Análise de Dados com IA", layout="wide")
 st.title("📊 Análise de Dados com IA")
-st.write(
-    "Envie uma planilha Excel e faça perguntas em linguagem natural. "
-    "O assistente irá gerar análises, tabelas e gráficos automaticamente."
-)
 
-# ======================================================
-# UPLOAD DO ARQUIVO
-# ======================================================
-arquivo = st.file_uploader(
-    "📂 Envie um arquivo Excel (.xlsx)",
-    type=["xlsx"]
-)
-
+arquivo = st.file_uploader("📂 Envie um Excel (.xlsx)", type=["xlsx"])
 if not arquivo:
-    st.info("Envie um arquivo Excel para iniciar a análise.")
     st.stop()
 
 df = pd.read_excel(arquivo)
-
-st.success("Arquivo carregado com sucesso!")
+st.success("Arquivo carregado!")
 
 with st.expander("🔍 Visualizar dados"):
     st.dataframe(df.head(20))
@@ -62,10 +44,8 @@ python_tool = PythonAstREPLTool(
     }
 )
 
-tools = [python_tool]
-
 # ======================================================
-# PROMPT DO AGENTE
+# PROMPT
 # ======================================================
 prompt = ChatPromptTemplate.from_messages([
     (
@@ -73,60 +53,47 @@ prompt = ChatPromptTemplate.from_messages([
         """
         Você é um analista de dados especialista em pandas e visualização.
 
-        Regras obrigatórias:
-        - Sempre use o DataFrame chamado `df`
-        - Para cálculos e tabelas, gere código Python
+        Regras:
+        - Use sempre o DataFrame `df`
+        - Para cálculos ou tabelas, gere código Python
         - Para gráficos, use matplotlib ou seaborn
-        - Finalize gráficos com plt.show()
-        - Não invente nomes de colunas
+        - Sempre finalize gráficos com plt.show()
         - Responda em português
         """
     ),
-    ("human", "{input}"),
-    ("placeholder", "{agent_scratchpad}")
+    ("human", "{input}")
 ])
 
 # ======================================================
-# AGENTE
+# PIPELINE MODERNO (SEM AGENTEXECUTOR)
 # ======================================================
-agent = create_openai_tools_agent(
-    llm=llm,
-    tools=tools,
-    prompt=prompt
-)
-
-executor = AgentExecutor(
-    agent=agent,
-    tools=tools,
-    verbose=False
+chain = (
+    prompt
+    | llm.bind_tools([python_tool])
+    | StrOutputParser()
 )
 
 # ======================================================
-# INTERAÇÃO
+# UI
 # ======================================================
 st.subheader("💬 Faça sua pergunta")
 
 pergunta = st.text_input(
-    "Exemplos: "
-    "Qual a média da coluna X? | "
-    "Crie uma tabela com a soma de vendas por categoria | "
-    "Gere um gráfico da distribuição de idade"
+    "Ex: Qual a média da coluna X? | Gere um gráfico da distribuição de Y"
 )
 
-if st.button("Executar análise") and pergunta:
-    with st.spinner("Analisando os dados..."):
+if st.button("Executar") and pergunta:
+    with st.spinner("Analisando..."):
         try:
-            resposta = executor.invoke({"input": pergunta})
+            resposta = chain.invoke({"input": pergunta})
 
             st.subheader("📌 Resultado")
-            st.write(resposta["output"])
+            st.write(resposta)
 
-            # Renderizar gráficos
             for fig_num in plt.get_fignums():
                 st.pyplot(plt.figure(fig_num))
-
             plt.close("all")
 
         except Exception as e:
-            st.error("Erro ao executar a análise.")
+            st.error("Erro na análise")
             st.exception(e)
