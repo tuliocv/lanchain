@@ -4,8 +4,7 @@ openpyxl
 matplotlib
 seaborn
 
-langchain>=0.1.16
-langchain-core>=0.1.46
-langchain-community>=0.0.34
-langchain-experimental>=0.0.55
-langchain-openai>=0.0.8
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-experimental>=0.0.60
+langchain-openai>=0.1.0
