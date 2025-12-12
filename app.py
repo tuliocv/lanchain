@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_openai_tools_agent, AgentExecutor
+from langchain.agents import AgentExecutor
+from langchain.agents.openai_tools import create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 
