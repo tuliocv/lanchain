@@ -6,3 +6,4 @@ seaborn
 langchain
 langchain-openai
 openai
+openpyxl
